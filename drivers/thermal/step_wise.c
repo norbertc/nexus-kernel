@@ -30,8 +30,7 @@
  * If the temperature is higher than a trip point,
  *    a. if the trend is THERMAL_TREND_RAISING, use higher cooling
  *       state for this trip point
- *    b. if the trend is THERMAL_TREND_DROPPING, use lower cooling
- *       state for this trip point
+ *    b. if the trend is THERMAL_TREND_DROPPING, do nothing
  *    c. if the trend is THERMAL_TREND_RAISE_FULL, use upper limit
  *       for this trip point
  *    d. if the trend is THERMAL_TREND_DROP_FULL, use lower limit
@@ -72,9 +71,11 @@ static unsigned long get_target_state(struct thermal_instance *instance,
 			if (!throttle)
 				cur_state = -1;
 		} else {
-			cur_state -= 1;
-			if (cur_state > instance->upper)
-				cur_state = instance->upper;
+			if (!throttle) {
+				cur_state -= 1;
+				if (cur_state > instance->upper)
+					cur_state = instance->upper;
+			}
 		}
 		break;
 	case THERMAL_TREND_DROP_FULL:
