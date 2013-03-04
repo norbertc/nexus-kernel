@@ -366,18 +366,14 @@ static void free_css_set_work(struct work_struct *work)
 		struct cgroup *cgrp = link->cgrp;
 		list_del(&link->cg_link_list);
 		list_del(&link->cgrp_link_list);
-		if (atomic_dec_and_test(&cgrp->count) &&
-		    notify_on_release(cgrp)) {
-			if (taskexit)
-				set_bit(CGRP_RELEASABLE, &cgrp->flags);
+		if (atomic_dec_and_test(&cgrp->count)) {
 			check_for_release(cgrp);
 			cgroup_wakeup_rmdir_waiter(cgrp);
 		}
-
 		kfree(link);
 	}
-
 	write_unlock(&css_set_lock);
+
 	kfree(cg);
 }
 
