@@ -386,7 +386,7 @@ static void free_css_set_work(struct work_struct *work)
 	}
 
 	write_unlock(&css_set_lock);
-	kfree(cg, rcu_head);
+	kfree(cg);
 }
 
 static void free_css_set_rcu(struct rcu_head *obj)
