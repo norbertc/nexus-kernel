@@ -95,7 +95,6 @@ static inline int kref_put(struct kref *kref, void (*release)(struct kref *kref)
 }
 
 
->>>>>>> android-msm-mako-3.4-kitkat-mr0
 /**
  * kref_get_unless_zero - Increment refcount for object unless it is zero.
  * @kref: object.
