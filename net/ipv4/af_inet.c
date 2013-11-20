@@ -115,6 +115,7 @@
 #include <net/inet_common.h>
 #include <net/xfrm.h>
 #include <net/net_namespace.h>
+#include <net/secure_seq.h>
 #ifdef CONFIG_IP_MROUTE
 #include <linux/mroute.h>
 #endif
@@ -255,8 +256,10 @@ void build_ehash_secret(void)
 		get_random_bytes(&rnd, sizeof(rnd));
 	} while (rnd == 0);
 
-	if (cmpxchg(&inet_ehash_secret, 0, rnd) == 0)
+	if (cmpxchg(&inet_ehash_secret, 0, rnd) == 0) {
 		get_random_bytes(&ipv6_hash_secret, sizeof(ipv6_hash_secret));
+		net_secret_init();
+	}
 }
 EXPORT_SYMBOL(build_ehash_secret);
 
@@ -1564,7 +1567,7 @@ static const struct net_protocol udp_protocol = {
 
 static const struct net_protocol icmp_protocol = {
 	.handler =	icmp_rcv,
-	.err_handler =	ping_err,
+	.err_handler =	ping_v4_err,
 	.no_policy =	1,
 	.netns_ok =	1,
 };
