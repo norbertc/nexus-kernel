@@ -1148,9 +1148,12 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 
 	device_unlock(dev);
 
+<<<<<<< HEAD
 	del_timer_sync(&timer);
 	destroy_timer_on_stack(&timer);
 
+=======
+>>>>>>> v3.4.5
  Complete:
 	complete_all(&dev->power.completion);
 
