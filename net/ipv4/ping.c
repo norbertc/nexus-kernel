@@ -773,7 +773,7 @@ int ping_v4_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		err = PTR_ERR(rt);
 		rt = NULL;
 		if (err == -ENETUNREACH)
-			IP_INC_STATS_BH(net, IPSTATS_MIB_OUTNOROUTES);
+			IP_INC_STATS(net, IPSTATS_MIB_OUTNOROUTES);
 		goto out;
 	}
 
@@ -830,9 +830,12 @@ int ping_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		 size_t len, int noblock, int flags, int *addr_len)
 {
 	struct inet_sock *isk = inet_sk(sk);
+<<<<<<< HEAD
 	int family = sk->sk_family;
 	struct sockaddr_in *sin;
 	struct sockaddr_in6 *sin6;
+=======
+>>>>>>> linux-3.4.y
 	struct sk_buff *skb;
 	int copied, err;
 
@@ -842,6 +845,7 @@ int ping_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	if (flags & MSG_OOB)
 		goto out;
 
+<<<<<<< HEAD
 	if (addr_len) {
 		if (family == AF_INET)
 			*addr_len = sizeof(*sin);
@@ -858,6 +862,10 @@ int ping_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 #endif
 		}
 	}
+=======
+	if (flags & MSG_ERRQUEUE)
+		return ip_recv_error(sk, msg, len, addr_len);
+>>>>>>> linux-3.4.y
 
 	skb = skb_recv_datagram(sk, flags, noblock, &err);
 	if (!skb)
@@ -876,13 +884,21 @@ int ping_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 	sock_recv_timestamp(msg, sk, skb);
 
+<<<<<<< HEAD
 	/* Copy the address and add cmsg data. */
 	if (family == AF_INET) {
 		sin = (struct sockaddr_in *) msg->msg_name;
+=======
+	/* Copy the address. */
+	if (msg->msg_name) {
+		struct sockaddr_in *sin = (struct sockaddr_in *)msg->msg_name;
+
+>>>>>>> linux-3.4.y
 		sin->sin_family = AF_INET;
 		sin->sin_port = 0 /* skb->h.uh->source */;
 		sin->sin_addr.s_addr = ip_hdr(skb)->saddr;
 		memset(sin->sin_zero, 0, sizeof(sin->sin_zero));
+<<<<<<< HEAD
 
 		if (isk->cmsg_flags)
 			ip_cmsg_recv(msg, skb);
@@ -909,6 +925,9 @@ int ping_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 #endif
 	} else {
 		BUG();
+=======
+		*addr_len = sizeof(*sin);
+>>>>>>> linux-3.4.y
 	}
 
 	err = copied;
