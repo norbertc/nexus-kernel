@@ -1524,6 +1524,7 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_MAC_HINT: MAC address recommendation as initial BSS
  * @NL80211_ATTR_WIPHY_FREQ_HINT: frequency of the recommended initial BSS
+ *
  * @NL80211_ATTR_MAX_AP_ASSOC_STA: Device attribute that indicates how many
  *	associated stations are supported in AP mode (including P2P GO); u32.
  *	Since drivers may not have a fixed limit on the maximum number (e.g.,
@@ -1533,6 +1534,10 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_TDLS_PEER_CAPABILITY: flags for TDLS peer capabilities, u32.
  *	As specified in the &enum nl80211_tdls_peer_capability.
+ *
+ * @NL80211_ATTR_IFACE_SOCKET_OWNER: flag attribute, if set during interface
+ *	creation then the new interface will be owned by the netlink socket
+ *	that created it and will be destroyed when the socket is closed
  *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -1869,6 +1874,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_MAX_AP_ASSOC_STA,
 
 	NL80211_ATTR_TDLS_PEER_CAPABILITY,
+
+	NL80211_ATTR_IFACE_SOCKET_OWNER,
 
 	/* add attributes here, update the policy in nl80211.c */
 
