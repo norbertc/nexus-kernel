@@ -1974,18 +1974,10 @@ int rt6_addrconf_purge(struct rt6_info *rt, void *arg) {
 	return 0;
 }
 
-restart:
-	read_lock_bh(&table->tb6_lock);
-	for (rt = table->tb6_root.leaf; rt; rt = rt->dst.rt6_next) {
-		if (rt->rt6i_flags & (RTF_DEFAULT | RTF_ADDRCONF) &&
-		    (!rt->rt6i_idev || rt->rt6i_idev->cnf.accept_ra != 2)) {
-			dst_hold(&rt->dst);
-			read_unlock_bh(&table->tb6_lock);
-			ip6_del_rt(rt);
-			goto restart;
-		}
-	}
-	read_unlock_bh(&table->tb6_lock);
+void rt6_purge_dflt_routers(struct net *net)
+{
+	fib6_clean_all(net, rt6_addrconf_purge, 0, NULL);
+}
 
 static void rtmsg_to_fib6_config(struct net *net,
 				 struct in6_rtmsg *rtmsg,
