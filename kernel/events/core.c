@@ -1264,7 +1264,7 @@ static void perf_retry_remove(struct perf_event *event)
  * When called from perf_event_exit_task, it's OK because the
  * context has been detached from its task.
  */
-static void perf_remove_from_context(struct perf_event *event, bool detach_group)
+static void __ref perf_remove_from_context(struct perf_event *event, bool detach_group)
 {
 	struct perf_event_context *ctx = event->ctx;
 	struct task_struct *task = ctx->task;
@@ -3016,6 +3016,14 @@ EXPORT_SYMBOL_GPL(perf_event_release_kernel);
 static void put_event(struct perf_event *event)
 {
 	struct task_struct *owner;
+
+	/*
+	 * Event can be in state OFF because of a constraint check.
+	 * Change to ACTIVE so that it gets cleaned up correctly.
+	 */
+	if ((event->state == PERF_EVENT_STATE_OFF) &&
+		event->attr.constraint_duplicate)
+			event->state = PERF_EVENT_STATE_ACTIVE;
 
 	if (!atomic_long_dec_and_test(&event->refcount))
 		return;
