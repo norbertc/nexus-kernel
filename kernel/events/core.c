@@ -1733,11 +1733,6 @@ retry:
 		 * a concurrent perf_event_context_sched_out().
 		 */
 		task = ctx->task;
-		/*
-		 * Reload the task pointer, it might have been changed by
-		 * a concurrent perf_event_context_sched_out().
-		 */
-		task = ctx->task;
 		goto retry;
 	}
 
