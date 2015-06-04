@@ -1775,6 +1775,56 @@ static const char *_get_packet_type_str(uint16 type)
 }
 #endif /* DHD_RX_DUMP */
 
+#ifdef CONFIG_PARTIALRESUME
+static unsigned int dhd_get_ipv6_stat(u8 type)
+{
+	static unsigned int ra = 0;
+	static unsigned int na = 0;
+	static unsigned int other = 0;
+
+	switch (type) {
+	case NDISC_ROUTER_ADVERTISEMENT:
+		ra++;
+		return ra;
+	case NDISC_NEIGHBOUR_ADVERTISEMENT:
+		na++;
+		return na;
+	default:
+		other++;
+		break;
+	}
+	return other;
+}
+
+static int dhd_rx_suspend_again(struct sk_buff *skb)
+{
+	u8 *pptr = skb_mac_header(skb);
+
+	if (pptr &&
+	    (memcmp(pptr, "\x33\x33\x00\x00\x00\x01", ETHER_ADDR_LEN) == 0) &&
+	    (ntoh16(skb->protocol) == ETHER_TYPE_IPV6)) {
+		u8 type = 0;
+#define ETHER_ICMP6_TYPE	54
+#define ETHER_ICMP6_DADDR	38
+		if (skb->len > ETHER_ICMP6_TYPE)
+			type = pptr[ETHER_ICMP6_TYPE];
+		if ((type == NDISC_NEIGHBOUR_ADVERTISEMENT) &&
+		    (ipv6_addr_equal(&in6addr_linklocal_allnodes,
+		    (const struct in6_addr *)(pptr + ETHER_ICMP6_DADDR)))) {
+			pr_debug("%s: Suspend, type = %d [%u]\n", __func__,
+				type, dhd_get_ipv6_stat(type));
+			return 0;
+		} else {
+			pr_debug("%s: Resume, type = %d [%u]\n", __func__,
+				type, dhd_get_ipv6_stat(type));
+		}
+#undef ETHER_ICMP6_TYPE
+#undef ETHER_ICMP6_DADDR
+	}
+	return DHD_PACKET_TIMEOUT_MS;
+}
+#endif
+
 void
 dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 {
@@ -1944,7 +1994,11 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 			continue;
 #endif
 		} else {
+#ifdef CONFIG_PARTIALRESUME
+			tout_rx |= dhd_rx_suspend_again(skb);
+#else
 			tout_rx = DHD_PACKET_TIMEOUT_MS;
+#endif
 		}
 
 		ASSERT(ifidx < DHD_MAX_IFS && dhd->iflist[ifidx]);
@@ -1993,6 +2047,11 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 #endif
 	DHD_OS_WAKE_LOCK_RX_TIMEOUT_ENABLE(dhdp, tout_rx);
 	DHD_OS_WAKE_LOCK_CTRL_TIMEOUT_ENABLE(dhdp, tout_ctrl);
+
+#ifdef CONFIG_PARTIALRESUME
+	if (tout_rx || tout_ctrl)
+		wifi_process_partial_resume(WIFI_PR_VOTE_FOR_RESUME);
+#endif
 }
 
 void
@@ -4139,6 +4198,8 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 		setbit(eventmask_msg->mask, WLC_E_PFN_GSCAN_FULL_RESULT);
 		setbit(eventmask_msg->mask, WLC_E_PFN_SCAN_COMPLETE);
 		setbit(eventmask_msg->mask, WLC_E_PFN_SWC);
+		setbit(eventmask_msg->mask, WLC_E_PFN_SSID_EXT);
+		setbit(eventmask_msg->mask, WLC_E_ROAM_EXP_EVENT);
 #endif /* GSCAN_SUPPORT */
 #ifdef BCMCCX_S69
 		setbit(eventmask_msg->mask, WLC_E_CCX_S69_RESP_RX);
@@ -4197,8 +4258,7 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 	dhd->pktfilter[DHD_BROADCAST_FILTER_NUM] = NULL;
 	dhd->pktfilter[DHD_MULTICAST4_FILTER_NUM] = NULL;
 	dhd->pktfilter[DHD_MULTICAST6_FILTER_NUM] = NULL;
-	/* Add filter to pass multicastDNS packet and NOT filter out as Broadcast */
-	dhd->pktfilter[DHD_MDNS_FILTER_NUM] = "104 0 0 0 0xFFFFFFFFFFFF 0x01005E0000FB";
+	dhd->pktfilter[DHD_MDNS_FILTER_NUM] = NULL;
 	/* apply APP pktfilter */
 	dhd->pktfilter[DHD_ARP_FILTER_NUM] = "105 0 0 12 0xFFFF 0x0806";
 
@@ -5514,8 +5574,7 @@ int net_os_rxfilter_add_remove(struct net_device *dev, int add_remove, int num)
 	int filter_id = 0;
 	int ret = 0;
 
-	if (!dhd || (num == DHD_UNICAST_FILTER_NUM) ||
-		(num == DHD_MDNS_FILTER_NUM))
+	if (!dhd || (num == DHD_UNICAST_FILTER_NUM))
 		return ret;
 	if (num >= dhd->pub.pktfilter_count)
 		return -EINVAL;
@@ -5531,6 +5590,10 @@ int net_os_rxfilter_add_remove(struct net_device *dev, int add_remove, int num)
 		case DHD_MULTICAST6_FILTER_NUM:
 			filterp = "103 0 0 0 0xFFFF 0x3333";
 			filter_id = 103;
+			break;
+		case DHD_MDNS_FILTER_NUM:
+			filterp = "104 0 0 0 0xFFFFFFFFFFFF 0x01005E0000FB";
+			filter_id = 104;
 			break;
 		default:
 			return -EINVAL;
@@ -5617,9 +5680,12 @@ int dhd_dev_get_feature_set(struct net_device *dev)
 		if (FW_SUPPORTED(dhd, rttd2d))
 			feature_set |= WIFI_FEATURE_D2D_RTT;
 	}
-	if (FW_SUPPORTED(dhd, proxd))
-		feature_set |= WIFI_FEATURE_D2AP_RTT;
-
+#ifdef RTT_SUPPORT
+	feature_set |= WIFI_FEATURE_D2AP_RTT;
+#endif /* RTT_SUPPORT */
+#ifdef LINKSTAT_SUPPORT
+	feature_set |= WIFI_FEATURE_LINKSTAT;
+#endif /* LINKSTAT_SUPPORT */
 	/* Supports STA + STA always */
 	feature_set |= WIFI_FEATURE_ADDITIONAL_STA;
 #ifdef PNO_SUPPORT
@@ -5628,6 +5694,7 @@ int dhd_dev_get_feature_set(struct net_device *dev)
 		feature_set |= WIFI_FEATURE_BATCH_SCAN;
 #ifdef GSCAN_SUPPORT
 		feature_set |= WIFI_FEATURE_GSCAN;
+		feature_set |= WIFI_FEATURE_HAL_EPNO;
 #endif /* GSCAN_SUPPORT */
 	}
 #endif /* PNO_SUPPORT */
@@ -5660,6 +5727,7 @@ int *dhd_dev_get_feature_set_matrix(struct net_device *dev, int *num)
 	         (feature_set_full & WIFI_FEATURE_D2D_RTT) |
 	         (feature_set_full & WIFI_FEATURE_D2AP_RTT) |
 	         (feature_set_full & WIFI_FEATURE_PNO) |
+	         (feature_set_full & WIFI_FEATURE_HAL_EPNO) |
 	         (feature_set_full & WIFI_FEATURE_BATCH_SCAN) |
 	         (feature_set_full & WIFI_FEATURE_GSCAN) |
 	         (feature_set_full & WIFI_FEATURE_HOTSPOT) |
@@ -5745,6 +5813,12 @@ dhd_dev_pno_get_for_batch(struct net_device *dev, char *buf, int bufsize)
 {
 	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
 	return (dhd_pno_get_for_batch(&dhd->pub, buf, bufsize, PNO_STATUS_NORMAL));
+}
+/* Linux wrapper to call common dhd_pno_set_mac_oui */
+int dhd_dev_pno_set_mac_oui(struct net_device *dev, uint8 *oui)
+{
+	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
+	return (dhd_pno_set_mac_oui(&dhd->pub, oui));
 }
 #endif /* PNO_SUPPORT */
 
@@ -5859,8 +5933,143 @@ int dhd_dev_retrieve_batch_scan(struct net_device *dev)
 
 	return (dhd_retreive_batch_scan_results(&dhd->pub));
 }
+/* Linux wrapper to call common dhd_pno_process_epno_result */
+void * dhd_dev_process_epno_result(struct net_device *dev,
+			const void  *data, uint32 event, int *send_evt_bytes)
+{
+	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
 
+	return (dhd_pno_process_epno_result(&dhd->pub, data, event, send_evt_bytes));
+}
+
+int dhd_dev_set_lazy_roam_cfg(struct net_device *dev,
+             wlc_roam_exp_params_t *roam_param)
+{
+	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
+	wl_roam_exp_cfg_t roam_exp_cfg;
+	int err;
+
+	if (!roam_param) {
+		return BCME_BADARG;
+	}
+
+	DHD_ERROR(("a_band_boost_thr %d a_band_penalty_thr %d\n",
+	      roam_param->a_band_boost_threshold, roam_param->a_band_penalty_threshold));
+	DHD_ERROR(("a_band_boost_factor %d a_band_penalty_factor %d cur_bssid_boost %d\n",
+	      roam_param->a_band_boost_factor, roam_param->a_band_penalty_factor,
+	      roam_param->cur_bssid_boost));
+	DHD_ERROR(("alert_roam_trigger_thr %d a_band_max_boost %d\n",
+	      roam_param->alert_roam_trigger_threshold, roam_param->a_band_max_boost));
+
+	memcpy(&roam_exp_cfg.params, roam_param, sizeof(*roam_param));
+	roam_exp_cfg.version = ROAM_EXP_CFG_VERSION;
+	roam_exp_cfg.flags = ROAM_EXP_CFG_PRESENT;
+	if (dhd->pub.lazy_roam_enable) {
+		roam_exp_cfg.flags |= ROAM_EXP_ENABLE_FLAG;
+	}
+	err = dhd_iovar(&(dhd->pub), 0, "roam_exp_params", (char *)&roam_exp_cfg, sizeof(roam_exp_cfg), 1);
+	if (err < 0) {
+		DHD_ERROR(("%s : Failed to execute roam_exp_params %d\n", __FUNCTION__, err));
+	}
+	return err;
+}
+
+int dhd_dev_lazy_roam_enable(struct net_device *dev, uint32 enable)
+{
+	int err;
+	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
+	wl_roam_exp_cfg_t roam_exp_cfg;
+
+	memset(&roam_exp_cfg, 0, sizeof(roam_exp_cfg));
+	roam_exp_cfg.version = ROAM_EXP_CFG_VERSION;
+	if (enable) {
+		roam_exp_cfg.flags = ROAM_EXP_ENABLE_FLAG;
+	}
+
+	err = dhd_iovar(&(dhd->pub), 0, "roam_exp_params", (char *)&roam_exp_cfg, sizeof(roam_exp_cfg), 1);
+	if (err < 0) {
+		DHD_ERROR(("%s : Failed to execute roam_exp_params %d\n", __FUNCTION__, err));
+	} else {
+		dhd->pub.lazy_roam_enable = (enable != 0);
+	}
+	return err;
+}
+int dhd_dev_set_lazy_roam_bssid_pref(struct net_device *dev,
+       wl_bssid_pref_cfg_t *bssid_pref, uint32 flush)
+{
+	int err;
+	int len;
+	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
+
+	bssid_pref->version = BSSID_PREF_LIST_VERSION;
+	/* By default programming bssid pref flushes out old values */
+	bssid_pref->flags = (flush && !bssid_pref->count) ? ROAM_EXP_CLEAR_BSSID_PREF: 0;
+	len = sizeof(wl_bssid_pref_cfg_t);
+	len += (bssid_pref->count - 1) * sizeof(wl_bssid_pref_list_t);
+	err = dhd_iovar(&(dhd->pub), 0, "roam_exp_bssid_pref", (char *)bssid_pref,
+	       len, 1);
+	if (err != BCME_OK) {
+		DHD_ERROR(("%s : Failed to execute roam_exp_bssid_pref %d\n", __FUNCTION__, err));
+	}
+	return err;
+}
+int dhd_dev_set_blacklist_bssid(struct net_device *dev, maclist_t *blacklist,
+    uint32 len, uint32 flush)
+{
+	int err;
+	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
+	int macmode;
+
+	if (blacklist) {
+		err = dhd_wl_ioctl_cmd(&(dhd->pub), WLC_SET_MACLIST, (char *)blacklist,
+						 len, TRUE, 0);
+		if (err != BCME_OK) {
+			DHD_ERROR(("%s : WLC_SET_MACLIST failed %d\n", __FUNCTION__, err));
+			return err;
+		}
+	}
+	/* By default programming blacklist flushes out old values */
+	macmode = (flush && !blacklist) ? WLC_MACMODE_DISABLED : WLC_MACMODE_DENY;
+	err = dhd_wl_ioctl_cmd(&(dhd->pub), WLC_SET_MACMODE, (char *)&macmode,
+	              sizeof(macmode), TRUE, 0);
+	if (err != BCME_OK) {
+		DHD_ERROR(("%s : WLC_SET_MACMODE failed %d\n", __FUNCTION__, err));
+	}
+	return err;
+}
+int dhd_dev_set_whitelist_ssid(struct net_device *dev, wl_ssid_whitelist_t *ssid_whitelist,
+    uint32 len, uint32 flush)
+{
+	int err;
+	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
+	wl_ssid_whitelist_t whitelist_ssid_flush;
+
+	if (!ssid_whitelist) {
+		if (flush) {
+			ssid_whitelist = &whitelist_ssid_flush;
+			ssid_whitelist->ssid_count = 0;
+		} else {
+			DHD_ERROR(("%s : Nothing to do here\n", __FUNCTION__));
+			return BCME_BADARG;
+		}
+	}
+	ssid_whitelist->version = SSID_WHITELIST_VERSION;
+	ssid_whitelist->flags = flush ? ROAM_EXP_CLEAR_SSID_WHITELIST : 0;
+	err = dhd_iovar(&(dhd->pub), 0, "roam_exp_ssid_whitelist", (char *)ssid_whitelist,
+	       len, 1);
+	if (err != BCME_OK) {
+		DHD_ERROR(("%s : Failed to execute roam_exp_bssid_pref %d\n", __FUNCTION__, err));
+	}
+	return err;
+}
 #endif /* GSCAN_SUPPORT */
+
+bool dhd_dev_is_legacy_pno_enabled(struct net_device *dev)
+{
+	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
+
+	return (dhd_is_legacy_pno_enabled(&dhd->pub));
+}
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && (1)
 static void dhd_hang_process(struct work_struct *work)
@@ -6279,6 +6488,10 @@ int dhd_os_wd_wake_lock(dhd_pub_t *pub)
 		if (!dhd->wakelock_wd_counter)
 			wake_lock(&dhd->wl_wdwake);
 #endif
+#ifdef CONFIG_PARTIALRESUME
+		if (!dhd->wakelock_wd_counter)
+			wifi_process_partial_resume(WIFI_PR_WD_INIT);
+#endif
 		dhd->wakelock_wd_counter++;
 		ret = dhd->wakelock_wd_counter;
 		spin_unlock_irqrestore(&dhd->wakelock_spinlock, flags);
@@ -6298,6 +6511,9 @@ int dhd_os_wd_wake_unlock(dhd_pub_t *pub)
 			dhd->wakelock_wd_counter = 0;
 #ifdef CONFIG_HAS_WAKELOCK
 			wake_unlock(&dhd->wl_wdwake);
+#endif
+#ifdef CONFIG_PARTIALRESUME
+			wifi_process_partial_resume(WIFI_PR_WD_COMPLETE);
 #endif
 		}
 		spin_unlock_irqrestore(&dhd->wakelock_spinlock, flags);
