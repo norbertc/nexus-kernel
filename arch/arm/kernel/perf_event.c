@@ -322,11 +322,18 @@ static irqreturn_t armpmu_dispatch_irq(int irq, void *dev)
 	struct arm_pmu *armpmu = *(struct arm_pmu **) dev;
 	struct platform_device *plat_device = armpmu->plat_device;
 	struct arm_pmu_platdata *plat = dev_get_platdata(&plat_device->dev);
+	int ret;
+	u64 start_clock, finish_clock;
 
+	start_clock = sched_clock();
 	if (plat && plat->handle_irq)
-		return plat->handle_irq(irq, armpmu, armpmu->handle_irq);
+		ret = plat->handle_irq(irq, armpmu, armpmu->handle_irq);
 	else
-		return armpmu->handle_irq(irq, armpmu);
+		ret = armpmu->handle_irq(irq, armpmu);
+	finish_clock = sched_clock();
+
+	perf_sample_event_took(finish_clock - start_clock);
+	return ret;
 }
 
 static int
@@ -347,14 +354,21 @@ armpmu_generic_free_irq(int irq, void *dev_id)
 static void
 armpmu_release_hardware(struct arm_pmu *armpmu)
 {
+	/*
+	 * If a cpu comes online during this function, do not enable its irq.
+	 * If a cpu goes offline, it should disable its irq.
+	 */
+	armpmu->pmu_state = ARM_PMU_STATE_GOING_DOWN;
 	armpmu->free_irq(armpmu);
 	pm_runtime_put_sync(&armpmu->plat_device->dev);
+	armpmu->pmu_state = ARM_PMU_STATE_OFF;
 }
 
 static int
 armpmu_reserve_hardware(struct arm_pmu *armpmu)
 {
 	int err;
+	int cpu;
 	struct arm_pmu_platdata *plat;
 	struct platform_device *pmu_device = armpmu->plat_device;
 
@@ -379,6 +393,10 @@ armpmu_reserve_hardware(struct arm_pmu *armpmu)
 		armpmu_release_hardware(armpmu);
 		return err;
 	}
+	armpmu->pmu_state = ARM_PMU_STATE_RUNNING;
+	if (armpmu->reset)
+		for_each_cpu(cpu, cpu_online_mask)
+			smp_call_function_single(cpu, armpmu->reset, armpmu, 1);
 
 	return 0;
 }
