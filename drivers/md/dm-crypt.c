@@ -753,7 +753,6 @@ static int crypt_convert(struct crypt_config *cc,
 
 		switch (r) {
 		/* async */
-		case -EINPROGRESS:
 		case -EBUSY:
 			wait_for_completion(&ctx->restart);
 			INIT_COMPLETION(ctx->restart);
