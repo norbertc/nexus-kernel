@@ -219,10 +219,6 @@ out:
 	return s;
 err_out:
 	security_sb_free(s);
-#ifdef CONFIG_SMP
-	if (s->s_files)
-		free_percpu(s->s_files);
-#endif
 	destroy_sb_writers(s);
 out_free_sb:
 	kfree(s);
@@ -238,9 +234,6 @@ out_free_sb:
  */
 static inline void destroy_super(struct super_block *s)
 {
-#ifdef CONFIG_SMP
-	free_percpu(s->s_files);
-#endif
 	destroy_sb_writers(s);
 	security_sb_free(s);
 	WARN_ON(!list_empty(&s->s_mounts));
@@ -726,7 +719,8 @@ int do_remount_sb(struct super_block *sb, int flags, void *data, int force)
 	   make sure there are no rw files opened */
 	if (remount_ro) {
 		if (force) {
-			mark_files_ro(sb);
+			sb->s_readonly_remount = 1;
+			smp_wmb();
 		} else {
 			retval = sb_prepare_remount_readonly(sb);
 			if (retval)
