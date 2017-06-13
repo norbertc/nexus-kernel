@@ -120,6 +120,10 @@ int f_setown(struct file *filp, unsigned long arg, int force)
 	int result;
 	type = PIDTYPE_PID;
 	if (who < 0) {
+		/* avoid overflow below */
+		if (who == INT_MIN)
+			return;
+
 		type = PIDTYPE_PGID;
 		who = -who;
 	}
