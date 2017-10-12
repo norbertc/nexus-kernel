@@ -1508,7 +1508,9 @@ static int elf_fdpic_dump_segments(struct file *file, size_t *size,
 	int err = 0;
 
 	for (vma = current->mm->mmap; vma; vma = vma->vm_next) {
+#ifdef CONFIG_MMU
 		unsigned long addr;
+#endif
 
 		if (!maydump(vma, mm_flags))
 			continue;
