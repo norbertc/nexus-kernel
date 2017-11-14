@@ -578,6 +578,9 @@ else
 KBUILD_CFLAGS	+= -O2
 endif
 
+# Disable store merging (needed in GCC 7.x
+KBUILD_CFLAGS	+= $(call cc-option,-fno-store-merging,)
+
 # Tell gcc to never replace conditional load with a non-conditional one
 KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
 
