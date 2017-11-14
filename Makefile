@@ -575,8 +575,12 @@ all: vmlinux
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS	+= -Os $(call cc-disable-warning,maybe-uninitialized,)
 else
-KBUILD_CFLAGS	+= -O2
+KBUILD_CFLAGS	+= -O2 $(call cc-disable-warning,maybe-uninitialized,)
 endif
+
+# Disable some warnings
+KBUILD_CFLAGS	+= $(call cc-disable-warning,unused-const-variable,) \
+		   $(call cc-disable-warning,format-truncation,)
 
 # Disable store merging (needed in GCC 7.x
 KBUILD_CFLAGS	+= $(call cc-option,-fno-store-merging,)
