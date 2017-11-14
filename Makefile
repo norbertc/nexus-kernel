@@ -580,7 +580,8 @@ endif
 
 # Disable some warnings
 KBUILD_CFLAGS	+= $(call cc-disable-warning,unused-const-variable,) \
-		   $(call cc-disable-warning,format-truncation,)
+		   $(call cc-disable-warning,format-truncation,) \
+		   $(call cc-disable-warning,misleading-indentation,)
 
 # Disable store merging (needed in GCC 7.x
 KBUILD_CFLAGS	+= $(call cc-option,-fno-store-merging,)
