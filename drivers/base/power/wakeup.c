@@ -791,7 +791,11 @@ void pm_get_active_wakeup_sources(char *pending_wakeup_source, size_t max)
 }
 EXPORT_SYMBOL_GPL(pm_get_active_wakeup_sources);
 
+#ifdef CONFIG_BOEFFLA_WL_BLOCKER
+void print_active_wakeup_sources(void)
+#else
 static void print_active_wakeup_sources(void)
+#endif
 {
 	struct wakeup_source *ws;
 	int active = 0;
@@ -818,6 +822,9 @@ static void print_active_wakeup_sources(void)
 			last_activity_ws->name);
 	rcu_read_unlock();
 }
+#ifdef CONFIG_BOEFFLA_WL_BLOCKER
+EXPORT_SYMBOL_GPL(print_active_wakeup_sources);
+#endif
 
 /**
  * pm_wakeup_pending - Check if power transition in progress should be aborted.
