@@ -536,7 +536,7 @@ int timekeeping_inject_offset(struct timespec *ts)
 {
 	struct timekeeper *tk = &timekeeper;
 	unsigned long flags;
-	struct timespec tmp;
+	struct timespec ts2, tmp;
 	int ret = 0;
 
 	if ((unsigned long)ts->tv_nsec >= NSEC_PER_SEC)
@@ -549,7 +549,7 @@ int timekeeping_inject_offset(struct timespec *ts)
 
 	/* Make sure the proposed value is valid */
 	tmp = timespec_add(tk_xtime(tk),  *ts);
-	if (timespec_compare(&tk->wall_to_monotonic, &ts) > 0 ||
+	if (timespec_compare(&tk->wall_to_monotonic, &ts2) > 0 ||
 		!timespec_valid_strict(&tmp)) {
 		ret = -EINVAL;
 		goto error;
