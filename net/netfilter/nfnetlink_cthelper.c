@@ -17,6 +17,7 @@
 #include <linux/types.h>
 #include <linux/list.h>
 #include <linux/errno.h>
+#include <linux/capability.h>
 #include <net/netlink.h>
 #include <net/sock.h>
 
@@ -300,6 +301,9 @@ nfnl_cthelper_new(struct sock *nfnl, struct sk_buff *skb,
 	struct nfnl_cthelper *nlcth;
 	int ret = 0;
 
+	if (!capable(CAP_NET_ADMIN))
+		return -EPERM;
+
 	if (!tb[NFCTH_NAME] || !tb[NFCTH_TUPLE])
 		return -EINVAL;
 
@@ -503,6 +507,9 @@ nfnl_cthelper_get(struct sock *nfnl, struct sk_buff *skb,
 	struct nfnl_cthelper *nlcth;
 	bool tuple_set = false;
 
+	if (!capable(CAP_NET_ADMIN))
+		return -EPERM;
+
 	if (nlh->nlmsg_flags & NLM_F_DUMP) {
 		struct netlink_dump_control c = {
 			.dump = nfnl_cthelper_dump_table,
@@ -568,6 +575,9 @@ nfnl_cthelper_del(struct sock *nfnl, struct sk_buff *skb,
 	bool tuple_set = false, found = false;
 	struct nfnl_cthelper *nlcth, *n;
 	int j = 0, ret;
+
+	if (!capable(CAP_NET_ADMIN))
+		return -EPERM;
 
 	if (tb[NFCTH_NAME])
 		helper_name = nla_data(tb[NFCTH_NAME]);
