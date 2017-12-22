@@ -724,7 +724,7 @@ static void icmp_unreach(struct sk_buff *skb)
 		info = ntohl(icmph->un.gateway) >> 24;
 		break;
 	case ICMP_TIME_EXCEEDED:
-		__ICMP_INC_STATS(net, ICMP_MIB_INTIMEEXCDS);
+		ICMP_INC_STATS(net, ICMP_MIB_INTIMEEXCDS);
 		if (icmph->code == ICMP_EXC_FRAGTIME)
 			goto out;
 		break;
